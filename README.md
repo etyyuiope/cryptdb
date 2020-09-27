@@ -139,3 +139,5 @@ Convention : When this document uses syntax like
       process of developling a new platform that more affectively addresses
       multiple principals.
 
+Notice:
+	If you want to selectively encrypt data, please refer to the new pdf.
