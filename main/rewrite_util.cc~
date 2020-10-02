@@ -28,7 +28,7 @@ optimize(Item ** const i, Analysis &a) {
 // this function should be called at the root of a tree of items
 // that should be rewritten
 Item *
-rewrite(const Item &i /*This is a lex's substructure*/, const EncSet &req_enc, Analysis &a)
+rewrite(const Item &i, const EncSet &req_enc, Analysis &a)
 {
     const std::unique_ptr<RewritePlan> &rp =
         constGetAssert(a.rewritePlans, &i);
@@ -38,8 +38,7 @@ rewrite(const Item &i /*This is a lex's substructure*/, const EncSet &req_enc, A
     TEST_NoAvailableEncSet(solution, i.type(), req_enc, rp->r.why,
                            std::vector<std::shared_ptr<RewritePlan> >());
 
-    std::cout << "Do_rewrite" << std::endl;
-    return itemTypes.do_rewrite(i, solution.chooseOne(), *rp.get(), a); //Why here.
+    return itemTypes.do_rewrite(i, solution.chooseOne(), *rp.get(), a);
 }
 
 TABLE_LIST *
@@ -165,11 +164,7 @@ gather(const Item &i, Analysis &a)
 void
 gatherAndAddAnalysisRewritePlan(const Item &i, Analysis &a)
 {
-	/*
-	 * Where filter goes.
-	 */
     LOG(cdb_v) << "calling gather for item " << i << std::endl;
-    std::cout << "calling gather for item" << i << std::endl; //Values can be deducted from item type?...
     a.rewritePlans[&i] = std::unique_ptr<RewritePlan>(gather(i, a));
 }
 
@@ -218,48 +213,45 @@ get_create_field(const Analysis &a, Create_field * const f,
 // as such is handled during INSERTion.
 std::vector<Create_field *>
 rewrite_create_field(const FieldMeta * const fm,
-                     Create_field * const f, const Analysis &a, bool needEnc)
+                     Create_field * const f, const Analysis &a)
 {
     LOG(cdb_v) << "in rewrite create field for " << *f;
 
     assert(fm->children.size() > 0);
 
     std::vector<Create_field *> output_cfields;
-    if (!needEnc) {
-    	output_cfields.push_back(f);
-    } else {
-    	// Don't add the default value to the schema.
-    	    Item *const save_def = f->def;
-    	    f->def = NULL;
 
-    	    // create each onion column
-    	    for (auto oit : fm->orderedOnionMetas()) {
-    	        OnionMeta * const om = oit.second;
-    	        Create_field * const new_cf = get_create_field(a, f, *om);
+    // Don't add the default value to the schema.
+    Item *const save_def = f->def;
+    f->def = NULL;
 
-    	        output_cfields.push_back(new_cf);
-    	    }
+    // create each onion column
+    for (auto oit : fm->orderedOnionMetas()) {
+        OnionMeta * const om = oit.second;
+        Create_field * const new_cf = get_create_field(a, f, *om);
 
-    	    // create salt column
-    	    if (fm->getHasSalt()) {
-    	        THD * const thd         = current_thd;
-    	        Create_field * const f0 = f->clone(thd->mem_root);
-    	        f0->field_name          = thd->strdup(fm->getSaltName().c_str());
-    	        // Salt is unsigned and is not AUTO_INCREMENT.
-    	        // > NOT_NULL_FLAG is useful for debugging if mysql strict mode
-    	        //   (ie, STRICT_ALL_TABLES) is turned on.
-    	        f0->flags               =
-    	            (f0->flags | UNSIGNED_FLAG | NOT_NULL_FLAG)
-    	            & ~AUTO_INCREMENT_FLAG;
-    	        f0->sql_type            = MYSQL_TYPE_LONGLONG;
-    	        f0->length              = 8;
-
-    	        output_cfields.push_back(f0);
-    	    }
-
-    	    // Restore the default to the original Create_field parameter.
-    	    f->def = save_def;
+        output_cfields.push_back(new_cf);
     }
+
+    // create salt column
+    if (fm->getHasSalt()) {
+        THD * const thd         = current_thd;
+        Create_field * const f0 = f->clone(thd->mem_root);
+        f0->field_name          = thd->strdup(fm->getSaltName().c_str());
+        // Salt is unsigned and is not AUTO_INCREMENT.
+        // > NOT_NULL_FLAG is useful for debugging if mysql strict mode
+        //   (ie, STRICT_ALL_TABLES) is turned on.
+        f0->flags               =
+            (f0->flags | UNSIGNED_FLAG | NOT_NULL_FLAG)
+            & ~AUTO_INCREMENT_FLAG;
+        f0->sql_type            = MYSQL_TYPE_LONGLONG;
+        f0->length              = 8;
+
+        output_cfields.push_back(f0);
+    }
+
+    // Restore the default to the original Create_field parameter.
+    f->def = save_def;
 
     return output_cfields;
 }
@@ -365,33 +357,21 @@ createAndRewriteField(Analysis &a, const ProxyState &ps,
                       TableMeta *const tm, bool new_table,
                       List<Create_field> &rewritten_cfield_list)
 {
-	/*
-	 * judge first.
-	 */
-
-    std::cout <<"I'am in CreateandRewrite now! Attention!"<<std::endl;
     const std::string name = std::string(cf->field_name);
-    std::cout <<"field_name is "<<name<<std::endl;
     auto buildFieldMeta =
         [] (const std::string name, Create_field * const cf,
             const ProxyState &ps, TableMeta *const tm)
     {
-        std::cout <<"Createing new fieldmeta now!"<<std::endl;
         return new FieldMeta(name, cf, ps.getMasterKey().get(),
                              ps.defaultSecurityRating(),
                              tm->leaseIncUniq());
     };
     std::unique_ptr<FieldMeta> fm(buildFieldMeta(name, cf, ps, tm));
 
-	const std::string enc = "enc_";
-	std::string identifier = name.substr(0, 4);
-	bool needEnc =
-			!(identifier.compare(enc));
-
     // -----------------------------
     //         Rewrite FIELD       
     // -----------------------------
-    const auto new_fields = rewrite_create_field(fm.get(), cf, a, needEnc);
+    const auto new_fields = rewrite_create_field(fm.get(), cf, a);
     rewritten_cfield_list.concat(vectorToListWithTHD(new_fields));
 
     // -----------------------------

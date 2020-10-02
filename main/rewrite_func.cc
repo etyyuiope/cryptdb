@@ -83,6 +83,10 @@ typical_gather(Analysis &a, const Item_func &i, const EncSet &my_es,
     TEST_BadItemArgumentCount(i.type(), 2, arg_count);
 
     Item *const *const args = i.arguments();
+    const std::string name = args[0]->name;
+    const std::string nenc = "nenc_";
+    std::string identifier = name.substr(0, 5);
+
     std::vector<std::shared_ptr<RewritePlan> >
         childr_rp({std::shared_ptr<RewritePlan>(gather(*args[0], a)),
                    std::shared_ptr<RewritePlan>(gather(*args[1], a))});
@@ -109,9 +113,15 @@ typical_gather(Analysis &a, const Item_func &i, const EncSet &my_es,
     const EncSet out_es = getEncSet();
     const reason rsn(out_es, why, i);
 
-    return new RewritePlanOneOLK(out_es,
-                                 solution.chooseOne(), childr_rp,
-                                 rsn);
+    if (identifier.compare(nenc) == 0) {
+    	return new RewritePlanOneOLK(PLAIN_EncSet,
+    	                                 solution.chooseOne(), childr_rp,
+    	                                 rsn);
+    } else {
+    	return new RewritePlanOneOLK(out_es,
+    	                                 solution.chooseOne(), childr_rp,
+    	                                 rsn);
+    }
 }
 
 static RewritePlan *
@@ -242,7 +252,13 @@ class CItemCompare : public CItemSubtypeFT<Item_func, FT> {
     virtual RewritePlan *
     do_gather_type(const Item_func &i, Analysis &a) const
     {
+
         LOG(cdb_v) << "CItemCompare (L1139) do_gather func " << i;
+
+        Item *const *const args = i.arguments();
+        const std::string name = args[0]->name;
+        const std::string nenc = "nenc_";
+        std::string identifier = name.substr(0, 5);
 
         std::string why;
 
@@ -270,7 +286,13 @@ class CItemCompare : public CItemSubtypeFT<Item_func, FT> {
         const EncSet my_es = getEncSet();
 
         TEST_BadItemArgumentCount(i.type(), 2, i.argument_count());
-        return typical_gather(a, i, my_es, why, false, PLAIN_EncSet);
+
+
+        if (identifier.compare(nenc) == 0) {
+        	return typical_gather(a, i, PLAIN_EncSet, why, false, PLAIN_EncSet);
+        } else {
+        	return typical_gather(a, i, my_es, why, false, PLAIN_EncSet);
+        }
     }
 
     virtual Item * do_optimize_type(Item_func *i, Analysis & a) const
@@ -545,16 +567,12 @@ static CItemMath<Item_func_int_div, str_idiv> ANON;
 /*
 extern const char str_sqrt[] = "sqrt";
 static CItemMath<Item_func_sqrt, str_sqrt> ANON;
-
 extern const char str_round[] = "round";
 static CItemMath<Item_func_round, str_round> ANON;
-
 extern const char str_sin[] = "sin";
 static CItemMath<str_sin> ANON;
-
 extern const char str_cos[] = "cos";
 static CItemMath<str_cos> ANON;
-
 extern const char str_acos[] = "acos";
 static CItemMath<str_acos> ANON;
 */
@@ -718,37 +736,26 @@ static class ANON : public CItemSubtypeFT<Item_func_like, Item_func::Functype::L
 
 	/*
 	LOG(cdb_v) << "Item_func do_gather_type " << *i;
-
 	Item **args = i->arguments();
 	assert_s(i->argument_count() == 2, "expecting LIKE to have two arguments");
-
 	if ((args[0]->type() == Item::Type::FIELD_ITEM) && (args[1]->type() == Item::Type::STRING_ITEM)) {
-
 	    string s(args[1]->str_value.ptr(), args[1]->str_value.length());
-
 	    if (s.find('%') == s.npos && s.find('_') == s.npos) {
                 // some queries actually use LIKE as an equality check..
 		return typical_gather(a, i, EQ_EncSet, "LIKE equality", tr, false, PLAIN_EncSet);
-
             } else {
-
 		// XXX check if pattern is one we can support?
-
 		reason r1;
 		RewritePlan * rp1 = gather(args[0], r1, a);
-
 		EncSet solution = rp1->es_out.intersect(Search_EncSet);
-
 		if (solution.empty()) {
 		    cerr << "cannot support " << i << " BECAUSE it needs any of " << Search_EncSet << "\n" \
 			 << " but field only supports  " << rp1->es_out << "\n";
 		}
-
 		stringstream ss;
 		ss << "like:'" << s << "'";
 		tr = reason(PLAIN_EncSet, ss.str(), i);
 		tr.add_child(r1);
-
 		return new RewritePlan(PLAIN_OLK, solution.chooseOne(), tr);
             }
         } else {
@@ -757,8 +764,6 @@ static class ANON : public CItemSubtypeFT<Item_func_like, Item_func::Functype::L
 	    //for (uint x = 0; x < i->argument_count(); x++)
             //    analyze(args[x], reason(EMPTY_EncSet, "like-non-const", i, &tr), a);
         }
-
-
 	*/
     }
 
@@ -773,49 +778,34 @@ static class ANON : public CItemSubtypeFT<Item_func_like, Item_func::Functype::L
             static_cast<const RewritePlanOneOLK &>(rp);
         return rewrite_args_FN(i, constr, one_rp, a);
 /*	LOG(cdb_v) << "Item_func_like do_rewrite_type " << *i;
-
 	assert_s(i->argument_count() == 2, "expecting LIKE to have two arguements");
 	Item **args = i->arguments();
-
 	if ((args[0]->type() == Item::Type::FIELD_ITEM) && (args[1]->type() == Item::Type::STRING_ITEM)) {
-
 	    string s(args[1]->str_value.ptr(), args[1]->str_value.length());
-
 	    if (s.find('%') == s.npos && s.find('_') == s.npos) {
                 // some queries actually use LIKE as an equality check..
-
 		Item_func_like * res = new Item_func_like(args[0], args[1], NULL, false);
 		do_rewrite_type_args(i, res, constr, a);
-
 		return res;
-
             } else {
 		// XXX check if pattern is one we can support?
-
 		RewritePlan * plan = getAssert(a.itemRewritePlans, (Item*) i);
 		auto childr_plan = getAssert(plan->plan, constr);
 		OLK child_OLK = getAssert(childr_plan, args[0]);
-
 		if (child_OLK == PLAIN_OLK) {
 		    return new Item_func_like(args[0], args[1], NULL, false);
 		}
-
 		Item * field = itemTypes.do_rewrite(args[0], child_OLK, a);
 		args[0]->name = NULL; //no alias
-
 		Item * expr = args[1];
 		FieldMeta * fm = child_OLK.key;
-
 		EncLayer * el = getAssert(fm->onions, oSWP)->layers.back();
 		assert_s(el->level() == SECLEVEL::SEARCH, "incorrect onion  level on onion oSWP");
-
 		Item * res = ((Search *) el)->searchUDF(field, expr);
 		cerr << "result is " << *res << "\n";
-
 		return res;
             }
         }
-
 	// we cannot support non-constant search patterns
 	assert_s(false, "we cannot support search patterns not of the form (field like constant string)");
 */
@@ -1113,13 +1103,11 @@ static class ANON : public CItemSubtypeFN<Item_func_case, str_case> {
                 &Item_func_case::else_expr_num>::ptr();
         uint ncases = i->*rob<Item_func_case, uint,
                 &Item_func_case::ncases>::ptr();
-
         if (first_expr_num >= 0)
             analyze(args[first_expr_num],
                     reason(EQ_EncSet, "case_first", i, &tr), a);
         if (else_expr_num >= 0)
             analyze(args[else_expr_num], tr, a);
-
         for (uint x = 0; x < ncases; x += 2) {
             if (first_expr_num < 0)
             analyze(args[x],

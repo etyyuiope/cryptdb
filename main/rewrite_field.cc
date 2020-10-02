@@ -65,6 +65,7 @@ class ANON : public CItemSubtypeIT<Item_field, Item::Type::FIELD_ITEM> {
     virtual RewritePlan *
     do_gather_type(const Item_field &i, Analysis &a) const
     {
+    	std::cout << "new debug:do _gathertype" << std::endl;
         LOG(cdb_v) << "FIELD_ITEM do_gather " << i << std::endl;
 
         const std::string fieldname = i.field_name;
@@ -72,15 +73,17 @@ class ANON : public CItemSubtypeIT<Item_field, Item::Type::FIELD_ITEM> {
             i.table_name ? i.table_name :
                             deductPlainTableName(i.field_name,
                                                  i.context, a);
+
  
         FieldMeta &fm =
             a.getFieldMeta(a.getDatabaseName(), table, fieldname);
+
         const EncSet es = EncSet(a, &fm);
 
         const std::string why = "is a field";
         reason rsn(es, why, i);
-
         return new RewritePlan(es, rsn);
+
     }
 
     virtual Item *
@@ -116,22 +119,29 @@ class ANON : public CItemSubtypeIT<Item_field, Item::Type::FIELD_ITEM> {
             a.getAnonTableName(db_name, plain_table_name);
         const std::string anon_field_name = om.getAnonOnionName();
 
-        Item_field * const res =
-            make_item_field(i, anon_table_name, anon_field_name);
-        // This information is only relevant if it comes from a
-        // HAVING clause.
-        // FIXME: Enforce this semantically.
-        a.item_cache[&i] = std::make_pair(res, constr);
+        const std::string enc = "enc_";
+        std::string identifier = fm.fname.substr(0, 4);
 
-        // This rewrite may be inside of an ON DUPLICATE KEY UPDATE...
-        // where there query is using the VALUES(...) function.
-        if (isItem_insert_value(i)) {
-            const Item_insert_value &insert_i =
-                static_cast<const Item_insert_value &>(i);
-            return make_item_insert_value(insert_i, res);
+        if (identifier.compare(enc) == 0) {
+        	Item_field * const res =
+        	            make_item_field(i, anon_table_name, anon_field_name);
+        	// This information is only relevant if it comes from a
+        	// HAVING clause.
+        	// FIXME: Enforce this semantically.
+        	a.item_cache[&i] = std::make_pair(res, constr);
+
+        	// This rewrite may be inside of an ON DUPLICATE KEY UPDATE...
+        	// where there query is using the VALUES(...) function.
+        	if (isItem_insert_value(i)) {
+        		const Item_insert_value &insert_i =
+        	    static_cast<const Item_insert_value &>(i);
+        	    return make_item_insert_value(insert_i, res);
+        	}
+        	return res;
+        } else {
+        	Item_field* const res = make_item_field(i, anon_table_name, fm.fname);
+        	return res;
         }
-
-        return res;
     }
 /*
     static OLK

@@ -68,6 +68,7 @@ public:
 } ConnectionInfo;
 
 // state maintained at the proxy
+// 代理中存储的连接信息
 typedef struct ProxyState {
     ProxyState(ConnectionInfo ci, const std::string &embed_dir,
                const std::string &master_key,
@@ -83,9 +84,9 @@ typedef struct ProxyState {
     {
         return masterKey;
     }
-    const std::unique_ptr<Connect> &getConn() const {return conn;}
+    const std::unique_ptr<Connect> &getConn() const {std::cout << "in ProxyState getConn" << std::endl; return conn;} // 连接信息，connect=mysql类型
     const std::unique_ptr<Connect> &getEConn() const {return e_conn;}
-
+    void close(){ conn->close(); e_conn->close(); }
     static int db_init(const std::string &embed_dir);
 
 private:
@@ -189,6 +190,8 @@ public:
 class Rewriter;
 
 enum class QueryAction {VANILLA, AGAIN, ROLLBACK};
+
+// 重写后的SQL语句结果总类，分别下属了simpleoutput、ddloutput、dmloutput
 class RewriteOutput {
 public:
     RewriteOutput(const std::string &original_query)

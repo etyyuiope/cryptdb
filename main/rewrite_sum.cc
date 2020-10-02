@@ -34,6 +34,7 @@ rewrite_agg_args(const Item_sum &oldi, const OLK &constr,
                  const RewritePlanOneOLK &rp, Analysis &a,
                  int no_args = -1)
 {
+
     if (no_args >= 0) {
         TEST_BadItemArgumentCount(oldi.type(), no_args,
                                   RiboldMYSQL::get_arg_count(oldi));
@@ -41,13 +42,23 @@ rewrite_agg_args(const Item_sum &oldi, const OLK &constr,
         no_args = RiboldMYSQL::get_arg_count(oldi);
     }
 
+
     std::list<Item *> res = std::list<Item *>();
     for (int j = 0; j < no_args; j++) {
         const Item *const child_item = RiboldMYSQL::get_arg(oldi, j);
-        Item *const out_child_item =
-            itemTypes.do_rewrite(*child_item, rp.olk,
-                                 *rp.childr_rp[j].get(), a);
-        res.push_back(out_child_item);
+        std::string identifier = child_item->name;
+        identifier = identifier.substr(0, 5);
+        std::string nenc = "nenc_";
+
+        if (identifier.compare(nenc) == 0) {
+        	Item* const new_child_item = (Item* const)child_item;
+        	res.push_back(new_child_item);
+        } else {
+			Item *const out_child_item =
+				itemTypes.do_rewrite(*child_item, rp.olk,
+									 *rp.childr_rp[j].get(), a);
+			res.push_back(out_child_item);
+        }
     }
 
     return res;
@@ -162,12 +173,23 @@ class CItemSum : public CItemSubtypeST<Item_sum_sum, SFT> {
 
         const EncSet my_es = ADD_EncSet;
         const EncSet solution = my_es.intersect(childr_rp[0]->es_out);
+
+        std::string identifier = childr_rp[0]->r.item.name;
+        identifier = identifier.substr(0, 5);
+        const std::string nenc = "nenc_";
+
         const std::string why = "summation";
         TEST_NoAvailableEncSet(solution, i.type(), my_es, why,
                                childr_rp);
 
         const OLK olk = solution.chooseOne();
         const EncSet return_es = EncSet(olk);
+
+        if (identifier.compare(nenc) == 0) {
+        	const reason rsn(PLAIN_EncSet, why, i);
+        	return new RewritePlanOneOLK(PLAIN_EncSet, olk, childr_rp, rsn);
+        }
+
         const reason rsn(return_es, why, i);
 
         return new RewritePlanOneOLK(return_es, olk, childr_rp, rsn);
@@ -184,22 +206,22 @@ class CItemSum : public CItemSubtypeST<Item_sum_sum, SFT> {
                              static_cast<const RewritePlanOneOLK &>(rp),
                              a, 1);
 
-        if (oAGG == constr.o) {
-            OnionMeta *const om = constr.key->getOnionMeta(oAGG);
-            assert(om);
-            EncLayer const &el = a.getBackEncLayer(*om);
-            TEST_UnexpectedSecurityLevel(oAGG, SECLEVEL::HOM,
-                                         el.level());
-            return static_cast<const HOM &>(el).sumUDA(args.front());
-        } else {
-            TEST_UnexpectedSecurityLevel(constr.o, SECLEVEL::PLAINVAL,
-                                         constr.l);
+            if (oAGG == constr.o) {
+                OnionMeta *const om = constr.key->getOnionMeta(oAGG);
+                assert(om);
+                EncLayer const &el = a.getBackEncLayer(*om);
+                TEST_UnexpectedSecurityLevel(oAGG, SECLEVEL::HOM,
+                                             el.level());
+                return static_cast<const HOM &>(el).sumUDA(args.front());
+            } else {
+                TEST_UnexpectedSecurityLevel(constr.o, SECLEVEL::PLAINVAL,
+                                             constr.l);
 
-            Item *const new_arg =
-                RiboldMYSQL::clone_item(*RiboldMYSQL::get_arg(i, 0));
-            return new Item_sum_sum(new_arg, i.has_with_distinct());
+                Item *const new_arg =
+                    RiboldMYSQL::clone_item(*RiboldMYSQL::get_arg(i, 0));
+                return new Item_sum_sum(new_arg, i.has_with_distinct());
+            }
         }
-    }
 };
 
 //TODO: field OPE should not be blob for text either

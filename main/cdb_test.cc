@@ -67,7 +67,7 @@ static bool handle_line(ProxyState& ps, const std::string& q, bool pp=true)
 
   add_history(q.c_str());
 
-  // handle meta inputs
+  // handle meta inputs 以:load name 标志从文件输入
   if (q.find(":load") == 0) {
     std::string filename = q.substr(6);
     trim(filename);
@@ -95,6 +95,13 @@ static bool handle_line(ProxyState& ps, const std::string& q, bool pp=true)
   try {
       const std::string &default_db =
           getDefaultDatabaseForConnection(ps.getConn());
+      /*
+       *
+       */
+      std::cout << "在函数handle_line中\ndefault_db: " + default_db << std::endl;
+      /*
+       *
+       */
       const EpilogueResult &epi_result =
           executeQuery(ps, q, default_db, &schema_cache, pp);
       if (QueryAction::ROLLBACK == epi_result.action) {
@@ -117,6 +124,7 @@ static bool handle_line(ProxyState& ps, const std::string& q, bool pp=true)
   }
 }
 
+/*
 int
 main(int ac, char **av)
 {
@@ -133,7 +141,7 @@ main(int ac, char **av)
 
     ConnectionInfo ci("localhost", "root", "letmein");
     const std::string master_key = "2392834";
-    ProxyState ps(ci, av[1], master_key);
+    ProxyState ps(ci, av[1], master_key); // ps=连接的状态信息，av[1]=嵌入数据库路径
     const std::string create_db =
         "CREATE DATABASE IF NOT EXISTS " + std::string(av[2]);
     if (!handle_line(ps, create_db, false)) {
@@ -157,3 +165,4 @@ main(int ac, char **av)
         }
     }
 }
+*/

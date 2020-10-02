@@ -31,6 +31,36 @@
 #include <util/cleanup.hh>
 #include <util/rob.hh>
 
+struct Result{
+	int  result_size; // 传输的大小
+	int  name_size;   // 属性集的大小
+	int  name_num;    // 属性的个数
+	int  type_size;   // 类型集的大小
+	int  type_num;    // 类型的个数
+	int  data_size;   // 结果集的大小
+	int  data_row;    // 结果集的行数
+	int  data_col;    // 结果集的列数
+	int  query_size;  // 查询语句大小
+	char result[0];   // 四合一
+//  char *query;      // 查询语句
+//	char name[0];     // 属性集
+//	char type[0];     // 类型集
+//	char data[0];     // 结果集
+};
+
+// 传递数据的长度和类型s
+struct SizeType{
+	int size;
+	int type;
+};
+
+// SQL语句
+struct SQL {
+	int  sql_size;  // 大小
+	int  number;   // 传递SQL语句个数
+	char sql[0];   // SQL语句
+};
+
 extern std::string global_crash_point;
 
 void
@@ -57,17 +87,19 @@ public:
         : rmeta(rmeta), output(std::unique_ptr<RewriteOutput>(output)) {}
     QueryRewrite(QueryRewrite &&other_qr) : rmeta(other_qr.rmeta),
         output(std::move(other_qr.output)) {}
-    const ReturnMeta rmeta;
-    std::unique_ptr<RewriteOutput> output;
+    const ReturnMeta rmeta; // 返回的结果集
+    std::unique_ptr<RewriteOutput> output; // 重写后的SQL语句集
 };
 
 // Main class processing rewriting
+// 重写操作和结果解密的实际执行类
 class Rewriter {
     Rewriter();
     ~Rewriter();
 
 public:
 
+    // 重写操作的实际执行类
     static QueryRewrite
         rewrite(const ProxyState &ps, const std::string &q,
                 SchemaInfo const &schema, const std::string &default_db);
@@ -93,6 +125,30 @@ EpilogueResult
 executeQuery(const ProxyState &ps, const std::string &q,
              const std::string &default_db,
              SchemaCache *const schema_cache, bool pp=true);
+
+/*
+ * change
+ */
+std::list<std::string>
+RewriteQuery(const ProxyState &ps, const std::string &q,
+		const std::string &default_db,
+        SchemaCache *const schema_cache, bool pp=true);
+
+struct Result*
+DecryptResult(const ProxyState &ps, const std::string &q,
+             const std::string &default_db, struct Result* res,
+             SchemaCache *const schema_cache, bool pp);
+
+ResType   ResultToResType(struct Result* result); // ResultToResType
+struct Result*  ResTypeToResult(ResType& resPlain, ResType& resCipher, char* query);
+void printResult(struct Result* result);
+void printResType(const ResType& restype);
+
+char getHexChar(char i);
+char getBYteValue(char i);
+char* EncodeBase64(char* buf, long size);
+char *DecodeBase64(char *base64Char, long base64CharSize);
+
 
 #define UNIMPLEMENTED \
         throw std::runtime_error(std::string("Unimplemented: ") + \
@@ -201,7 +257,7 @@ class CItemTypeDir : public CItemType {
     Item *do_rewrite(const Item &i, const OLK &constr,
                      const RewritePlan &rp, Analysis &a) const
     {
-        return lookup(i).do_rewrite(i, constr, rp, a);
+        return lookup(i).do_rewrite(i, constr, rp, a); //?lookuo
     }
 
     void do_rewrite_insert(const Item &i, const FieldMeta &fm,
@@ -216,11 +272,14 @@ protected:
     const CItemType &do_lookup(const Item &i, const T &t,
                                const std::string &errname) const
     {
+    	std::cout << "do_lookup?? And right value is:" << std::endl;
+    	std::cout << "column name:" << std::endl;
         auto x = types.find(t);
         if (x == types.end()) {
             thrower() << "missing " << errname << " " << t << " in "
                       << i << std::endl;
         }
+        std::cout << "x->second" << std::endl;
         return *x->second;
     }
 

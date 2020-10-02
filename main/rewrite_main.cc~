@@ -32,7 +32,6 @@ extern CItemSumFuncDir sumFuncTypes;
 extern CItemFuncNameDir funcNames;
 
 #define ANON                ANON_NAME(__anon_id_)
-#define TYPE_LENGTH 4
 
 //TODO: use getAssert in more places
 //TODO: replace table/field with FieldMeta * for speed and conciseness
@@ -91,16 +90,16 @@ mysql_query_wrapper(MYSQL *const m, const std::string &q)
 bool
 sanityCheck(FieldMeta &fm)
 {
-//    for (auto it = fm.children.begin(); it != fm.children.end();
-//         it++) {
-//        OnionMeta *const om = (*it).second.get();
-//        const onion o = (*it).first.getValue();
-//        const std::vector<SECLEVEL> &secs = fm.getOnionLayout().at(o);
-//        for (size_t i = 0; i < om->layers.size(); ++i) {
-//            std::unique_ptr<EncLayer> const &layer = om->layers[i];
-//            assert(layer->level() == secs[i]);
-//        }
-//    }
+    for (auto it = fm.children.begin(); it != fm.children.end();
+         it++) {
+        OnionMeta *const om = (*it).second.get();
+        const onion o = (*it).first.getValue();
+        const std::vector<SECLEVEL> &secs = fm.getOnionLayout().at(o);
+        for (size_t i = 0; i < om->layers.size(); ++i) {
+            std::unique_ptr<EncLayer> const &layer = om->layers[i];
+             assert(layer->level() == secs[i]);
+        }
+    }
     return true;
 }
 
@@ -1246,13 +1245,6 @@ Rewriter::dispatchOnLex(Analysis &a, const ProxyState &ps,
                         const std::string &query)
 {
     std::unique_ptr<query_parse> p;
-    /*
-     * debug
-     */
-    std::cout << "在函数dispatchOnLex()中\na.getDatabaseName(): " + a.getDatabaseName() + "\nquery: " + query << std::endl;
-    /*
-     * debug
-     */
     try {
         p = std::unique_ptr<query_parse>(
                 new query_parse(a.getDatabaseName(), query));
@@ -1272,10 +1264,6 @@ Rewriter::dispatchOnLex(Analysis &a, const ProxyState &ps,
         AssignOnce<LEX *> out_lex;
 
         try {
-        	/*
-        	 * debug
-        	 */
-        	std::cout << "transformLex操作!" << std::endl;
             out_lex = handler.transformLex(a, lex, ps);
         } catch (OnionAdjustExcept e) {
             LOG(cdb_v) << "caught onion adjustment";
@@ -1398,7 +1386,6 @@ cryptdbDirective(const std::string &query)
     return true;
 }
 
-// 进行重写操作
 QueryRewrite
 Rewriter::rewrite(const ProxyState &ps, const std::string &q,
                   SchemaInfo const &schema,
@@ -1410,15 +1397,13 @@ Rewriter::rewrite(const ProxyState &ps, const std::string &q,
 
     Analysis analysis(default_db, schema);
 
-    std::cout << "in Rewriter::rewrite: " << q << std::endl;
-    // output就是重写后的SQL语句集
     RewriteOutput *output;
-    if (cryptdbDirective(q)) { // 不需要进行重写
+    if (cryptdbDirective(q)) {
         output = Rewriter::handleDirective(analysis, ps, q);
     } else {
         // NOTE: Care what data you try to read from Analysis
         // at this height.
-        output = Rewriter::dispatchOnLex(analysis, ps, q); // 进行重写
+        output = Rewriter::dispatchOnLex(analysis, ps, q);
         if (!output) {
             output = new SimpleOutput(mysql_noop());
         }
@@ -1477,12 +1462,8 @@ Rewriter::decryptResults(const ResType &dbres, const ReturnMeta &rmeta)
     }
 
     // decrypt rows
-    const std::string enc = "enc_";
     unsigned int col_index = 0;
     for (unsigned int c = 0; c < cols; c++) {
-    	std::string identifier = res.names[c].substr(0, 4);
-    	bool flag = identifier.compare(enc);
-    	//std::cout << "test:::::" << res.names[c] << std::endl;
         const ReturnField &rf = rmeta.rfmeta.at(c);
         if (rf.getIsSalt()) {
             continue;
@@ -1490,8 +1471,7 @@ Rewriter::decryptResults(const ResType &dbres, const ReturnMeta &rmeta)
 
         FieldMeta *const fm = rf.getOLK().key;
         for (unsigned int r = 0; r < rows; r++) {
-            if (!fm || dbres.rows[r][c]->is_null()
-            		|| flag) {
+            if (!fm || dbres.rows[r][c]->is_null()) {
                 res.rows[r][col_index] = dbres.rows[r][c];
             } else {
                 uint64_t salt = 0;
@@ -1523,7 +1503,6 @@ mysql_noop_res(const ProxyState &ps)
     return ResType(noop_dbres->unpack());
 }
 
-// 执行查询操作，包括SQL语句从写、执行SQL操作、获得结果、结果解密一整套过程
 EpilogueResult
 executeQuery(const ProxyState &ps, const std::string &q,
              const std::string &default_db,
@@ -1533,380 +1512,35 @@ executeQuery(const ProxyState &ps, const std::string &q,
 
     std::unique_ptr<QueryRewrite> qr;
     // out_queryz: queries intended to be run against remote server.
-    std::list<std::string> out_queryz; // 重写后的SQL语句
+    std::list<std::string> out_queryz;
     queryPreamble(ps, q, &qr, &out_queryz, schema_cache, default_db);
-    // 将重写后的语句存入out_queryz
     assert(qr);
 
-    /*
-     * change
-     */
     std::unique_ptr<DBResult> dbres;
     for (auto it : out_queryz) {
         if (true == pp) {
-            prettyPrintQuery(it); // 输出重写后的SQL语句，以QUERY:为标识
+            prettyPrintQuery(it);
         }
-        if ((strncmp(toLowerCase(it).c_str(), "use", 3) == 0) ||
-        		(strncmp(toLowerCase(it).c_str(), "create database", 15) == 0) ||
-        		(strncmp(toLowerCase(it).c_str(), "drop database", 13) == 0)
-        		) {
-        	std::cout << "SQL语句执行: " + it << std::endl;
-        	TEST_Sync(ps.getConn()->execute(it, &dbres,
-        	                                    qr->output->multipleResultSets()),
-        	                  "failed to execute query!");
-        }
-        // 在mysql数据库中真正执行重写后的每一句SQL语句，结果存入dbres
-        // 其中的getConn()返回一个真争得mysql连接
-        // qr->output->multipleResultSets() 判断是否有多个数据集结果
-        /*
+
         TEST_Sync(ps.getConn()->execute(it, &dbres,
                                     qr->output->multipleResultSets()),
                   "failed to execute query!");
-                  */
         // XOR: Either we have one result set, or we were expecting
         // multiple result sets and we threw them all away.
-        // assert(!!dbres != !!qr->output->multipleResultSets());
-
+        assert(!!dbres != !!qr->output->multipleResultSets());
     }
-
 
     // ----------------------------------
     //       Post Query Processing
     // ----------------------------------
-    // 获得重写后的结果，此处的dbres是加密的形式
-    /*
-     * change
-     */
-//    const ResType &res =
-//        dbres ? ResType(dbres->unpack()) : mysql_noop_res(ps);
-    const ResType &res = mysql_noop_res(ps);
+    const ResType &res =
+        dbres ? ResType(dbres->unpack()) : mysql_noop_res(ps);
     assert(res.success());
-    // 进行解密以及输出解密后的结果
-
     const EpilogueResult epi_result =
         queryEpilogue(ps, *qr.get(), res, q, default_db, pp);
     assert(epi_result.res_type.success());
 
-
     return epi_result;
-}
-
-static Item *
-getItem(char *const content, enum_field_types type, uint len){
-	std::cout << "in getItem" << std::endl;
-    if (content == NULL) {
-        return new Item_null();
-    }
-    const std::string content_str = std::string(content, len);
-    if (IsMySQLTypeNumeric(type)) {
-        const ulonglong val = valFromStr(content_str);
-        std::cout << "in getItem IsMySQLTypeNumeric" << std::endl;
-        return new Item_int(val);
-    } else {
-        return new Item_string(make_thd_string(content_str), len,
-                               &my_charset_bin);
-    }
-}
-
-void printResult(struct Result* result){
-	std::cout << "===================printResult begin====================" << std::endl;
-	std::cout << "result->result_size: " << result->result_size << std::endl;
-	std::cout << "result->name_size: " << result->name_size << std::endl;
-	std::cout << "result->name_num: " << result->name_num << std::endl;
-	std::cout << "result->type_size: " << result->type_size << std::endl;
-	std::cout << "result->type_num: " << result->type_num << std::endl;
-	std::cout << "result->data_size: " << result->data_size << std::endl;
-	std::cout << "result->data_row: " << result->data_row << std::endl;
-	std::cout << "result->data_col: " << result->data_col << std::endl;
-    std::cout << "result->name address: " << &(result->result) << std::endl;
-    std::cout << "result->type address: " << &(result->result) + result->name_size << std::endl;
-    std::cout << "result->data address: " << &(result->result) + result->name_size + result->type_size << std::endl;
-    // 输出查询查询语句
-    std::cout << "query: " << (char*)(result->result) << std::endl;
-    // 输出属性集和类型集
-	int pointer_name = result->query_size;
-	int pointer_type = result->query_size;
-	for(int i = 0; i < result->name_num; i++){
-		std::cout << "name: " << (char*)(result->result + pointer_name) << std::endl;
-		std::cout << "type: " << (char*)(result->result + result->name_size + pointer_type) << std::endl;
-		pointer_name += (strlen((char*)(result->result + pointer_name)) + 1);
-		pointer_type += (strlen((char*)(result->result + result->name_size + pointer_type)) + 1);
-	}
-	// 输出结果集
-	int pointer_data = result->query_size;
-	for(int i = 0; i < result->data_row; i++){
-		for(int j = 0; j < result->data_col; j++){
-			std::cout << "data: " << (char*)(result->result + result->name_size + result->type_size + pointer_data) << std::endl;
-			pointer_data += (strlen((char*)(result->result + result->name_size + result->type_size + pointer_data)) + 1);
-		}
-	}
-	std::cout << "===================printResult end=====================" << std::endl;
-}
-
-char getHexChar(char i)
-{
-	if (i <= 9)
-		return '0' + i;
-	else
-		return 'A' + i-10;
-}
-char getBYteValue(char i)
-{
-	if (i <= '9')
-		return i - '0';
-	else
-		return i - 'A'+10;
-}
-
-char* EncodeBase64(char* buf, long size) {
-
-	char *base64Char = (char*)malloc(size * 2);
-	int i = 0;
-	while (i < size) {
-		char b0 = buf[i];
-		base64Char[2 * i] = getHexChar(((b0 & 0xF0) >> 4) & 0x0F);
-		base64Char[2 * i + 1] = getHexChar((b0 & 0x0F));
-		i++;
-	}
-//	base64Char[2 * i ] = '\0';
-	return base64Char;
-}
-char *DecodeBase64(char *base64Char, long base64CharSize) {
-
-	char *originChar = (char*)malloc(base64CharSize / 2);
-	int i = 0;
-	while (i < base64CharSize/2) {
-		char b0 = base64Char[2 * i];
-		char b1 = base64Char[2 * i + 1];
-		originChar[i] = (getBYteValue(b0) << 4) | getBYteValue(b1);
-		i++;
-	}
-//	originChar[i] = '\0';
-	return originChar;
-}
-
-ResType ResultToResType(struct Result* result){
-	std::cout << "in ResultToResType" << std::endl;
-	ResType restype;
-	// 遍历属性集和类型集
-	int pointer_name = result->query_size;
-	int pointer_type = result->query_size;
-	for(int i = 0; i < result->name_num; i++){
-		restype.names.push_back((char*)(result->result + pointer_name));
-		int type = atoi((char*)(result->result + result->name_size + pointer_type));
-		restype.types.push_back((enum_field_types)type);
-		pointer_name += (strlen((char*)(result->result + pointer_name)) + 1);
-		pointer_type += (strlen((char*)(result->result + result->name_size + pointer_type)) + 1);
-	}
-	std::cout << "in ResultToResType 遍历结果集" << std::endl;
-	// 遍历结果集
-	int pointer_data = result->query_size;
-	for(int i = 0; i < result->data_row; i++){
-		std::cout << "in ResultToResType for" << std::endl;
-		std::vector<std::shared_ptr<Item> > resrow;
-		for(int j = 0; j < result->data_col; j++){
-			std::cout << "in ResultToResType for for" << std::endl;
-			char* data_raw = (char*)(result->result + result->name_size + result->type_size + pointer_data);
-			enum_field_types type = restype.types[j];
-			char* data;
-			unsigned long length = strlen(data_raw);
-            if(type == 253){ // VARBINARY 解码
-            	data = DecodeBase64(data_raw, strlen(data_raw));
-            	length = strlen(data_raw) / 2;
-            }
-            else{
-                data = data_raw; // 数据
-            }
-			std::cout << "in ResultToResType data: " << data << std::endl;
-			std::cout << "in ResultToResType getItem" << std::endl;
-			Item *const item = getItem(data, type, length);
-			std::cout << "in ResultToResType after getItem" << std::endl;
-			resrow.push_back(std::shared_ptr<Item>(item));
-			pointer_data += (strlen((char*)(result->result + result->name_size + result->type_size + pointer_data)) + 1);
-		}
-		restype.rows.push_back(resrow);
-	}
-	std::cout << "in ResultToResType end" << std::endl;
-	return restype;
-}
-
-struct Result*  ResTypeToResult(ResType& resPlain, ResType& resCipher, char* query){
-	std::cout << "in  ResTypeToResult" << std::endl;
-
-	int result_size = 0; //  总大小
-
-	int name_size = 0; // 属性字段大小
-	int name_num = resPlain.names.size(); // 属性字段个数
-	char* name[name_num]; // 属性字段
-
-	int type_size = 0; // 类型字段大小
-	int type_num = name_num; // 类型字段个数
-	char type[type_num][TYPE_LENGTH]; // 类型字段
-
-	int data_size = 0; // 数据大小
-	int data_row = resPlain.rows.size(); // 数据行数
-	int data_col = name_num; // 数据列数
-	int query_size = strlen(query) + 1; // 查询语句大小
-	char* data[data_row][data_col]; // 数据字段
-
-	// 获得字段名及字段类型
-    std::stringstream ssn;
-    for (int i = 0; i < name_num; i++) {
-        char* name_temp = (char*)resPlain.names[i].c_str(); // 属性
-        name[i] = (char*)malloc(strlen(name_temp) + 1);
-    	memset(name[i], 0, strlen(name_temp) + 1);
-        memcpy(name[i], name_temp, strlen(name_temp) + 1);
-
-		name_size = name_size + strlen(name[i]) + 1; // 属性大小
-		sprintf(type[i], "%d", resCipher.types[i]); // 类型取自密文结果，解密后的restype不含类型
-		type_size = type_size + strlen(type[i]) + 1; // 类型大小
-        std::cout << "name: " << name[i] << ", length: " << strlen(name[i]) << std::endl;
-        std::cout << "type: " << type[i] << ", length: " << strlen(type[i]) << std::endl;
-    }
-	std::cout << "total_name_size: " << name_size << std::endl;
-	std::cout << "total_type_size: " << type_size << std::endl;
-
-    // 获得结果值
-    for (int i = 0; i < data_row; i++) {
-        for (int j = 0; j < data_col; j++) {
-            std::stringstream sstr;
-            sstr << *resPlain.rows[i][j];
-            char buf[strlen(sstr.str().c_str()) + 1];
-            snprintf(buf, sizeof(buf), "%s", sstr.str().c_str()); // 从string输出流获得数据
-            char* data_raw = (char*)sstr.str().c_str(); // 数据
-
-            data[i][j] = (char*)malloc(strlen(data_raw) + 1);
-        	memset(data[i][j], 0, strlen(data_raw) + 1);
-            memcpy(data[i][j] , data_raw, strlen(data_raw) + 1);
-
-			data_size = data_size + strlen(data[i][j]) + 1; // 数据大小
-			std::cout << "data: " << data[i][j] << ", length: " << strlen(data[i][j]) << std::endl;
-        }
-    }
-	result_size = name_size + type_size + data_size + sizeof(struct Result) + query_size; // 明文结果总大小
-	std::cout << "total_data_size: " << data_size << std::endl;
-	std::cout << "total_result_size: " << result_size << std::endl;
-
-	// 初始化结构结果集
-	struct Result* result = (struct Result*)malloc(result_size);
-	memset(result, 0, result_size);
-	result->result_size = result_size;
-	result->name_size = name_size;
-	result->name_num = name_num;
-	result->type_size = type_size;
-	result->type_num = type_num;
-	result->data_size = data_size;
-	result->data_row = data_row;
-	result->data_col = data_col;
-	result->query_size = strlen(query) + 1;
-
-	// 赋值查询语句
-	memcpy((char*)(result->result), query, query_size);
-	// 赋值属性集和类型集
-	int pointer_name = query_size;
-	int pointer_type = query_size;
-	for(int i = 0; i < result->name_num; i++){
-		memcpy((char*)(result->result + pointer_name), name[i], strlen(name[i]) + 1);
-		memcpy((char*)(result->result + result->name_size + pointer_type), type[i], strlen(type[i]) + 1);
-		pointer_name += (strlen(name[i]) + 1);
-		pointer_type += (strlen(type[i]) + 1);
-	}
-	// 赋值结果集
-	int pointer_data = query_size;
-	for(int i = 0; i < result->data_row; i++){
-		for(int j = 0; j < result->data_col; j++){
-			std::cout << "data[i][j]: " << data[i][j] << std::endl;
-			memcpy((char*)(result->result + result->name_size + result->type_size + pointer_data), data[i][j], strlen(data[i][j]) + 1);
-			pointer_data += (strlen(data[i][j]) + 1);
-		}
-	}
-	std::cout << "in ResTypeToResult: " << std::endl;
-	printResult(result);
-	return result;
-}
-
-/*
- * change
- */
-std::list<std::string>
-RewriteQuery(const ProxyState &ps, const std::string &q,
-             const std::string &default_db,
-             SchemaCache *const schema_cache, bool pp)
-{
-    assert(schema_cache);
-
-    std::unique_ptr<QueryRewrite> qr;
-    // out_queryz: queries intended to be run against remote server.
-    std::list<std::string> out_queryz; // 重写后的SQL语句
-    queryPreamble(ps, q, &qr, &out_queryz, schema_cache, default_db);
-    // 将重写后的语句存入out_queryz
-    assert(qr);
-
-    /*
-     * change
-     */
-    std::unique_ptr<DBResult> dbres;
-    for (auto it : out_queryz) {
-        if (true == pp) {
-            prettyPrintQuery(it); // 输出重写后的SQL语句，以QUERY:为标识
-        }
-        if ((strncmp(toLowerCase(it).c_str(), "use", 3) == 0) ||
-        		(strncmp(toLowerCase(it).c_str(), "create database", 15) == 0) ||
-        		(strncmp(toLowerCase(it).c_str(), "drop database", 13) == 0) ||
-//        	    (strncmp(toLowerCase(it).c_str(), "create table", 12) == 0) || // 对远程数据库的操作不必要
-//        		(strncmp(toLowerCase(it).c_str(), "drop table", 10) == 0) || // 为了得到数据故此执行
-        		(strncmp(toLowerCase(it).c_str(), " insert into remote_db",22) == 0) ||
-        		(strncmp(toLowerCase(it).c_str(), " update remote_db", 17) == 0)
-//        		(strncmp(toLowerCase(it).c_str(), " call", 4) == 0)
-        		) {
-        	std::cout << "SQL语句执行: " + it << std::endl;
-        	TEST_Sync(ps.getConn()->execute(it, &dbres,
-        	                                    qr->output->multipleResultSets()),
-        	                  "failed to execute query!");
-
-        }
-    }
-
-    return out_queryz;
-}
-
-struct Result*
-DecryptResult(const ProxyState &ps, const std::string &q,
-             const std::string &default_db, struct Result* result,
-             SchemaCache *const schema_cache, bool pp){
-    assert(schema_cache);
-
-    std::unique_ptr<QueryRewrite> qr;
-    // out_queryz: queries intended to be run against remote server.
-    std::list<std::string> out_queryz; // 重写后的SQL语句
-    queryPreamble(ps, q, &qr, &out_queryz, schema_cache, default_db);
-    // 将重写后的语句存入out_queryz
-    assert(qr);
-
-    /*
-     * change
-     */
-    std::unique_ptr<DBResult> dbres;
-    for (auto it : out_queryz) {
-        if (true == pp) {
-            prettyPrintQuery(it); // 输出重写后的SQL语句，以QUERY:为标识
-        }
-        if ((strncmp(toLowerCase(it).c_str(), "use", 3) == 0) ||
-        		(strncmp(toLowerCase(it).c_str(), "create database", 15) == 0) ||
-        		(strncmp(toLowerCase(it).c_str(), "drop database", 13) == 0)
-        		) {
-        	std::cout << "SQL语句执行: " + it << std::endl;
-        	TEST_Sync(ps.getConn()->execute(it, &dbres,
-        	                                    qr->output->multipleResultSets()),
-        	                  "failed to execute query!");
-        }
-    }
-    // 进行解密以及输出解密后的结果
-    ResType resCipher = ResultToResType(result); // ResultToResType
-    ResType resPlain =
-    		resultEpilogue(ps, *qr.get(), resCipher, q, default_db, pp);
-    struct Result* result_return = ResTypeToResult(resPlain, resCipher, (char*)q.data());
-    return result_return;
 }
 
 void
@@ -1937,10 +1571,6 @@ printRes(const ResType &r) {
         std::cerr << ss.str() << std::endl;
         //LOG(edb_v) << ss.str();
     }
-}
-
-void printResType(const ResType& restype) {
-	printRes(restype);
 }
 
 EncLayer &OnionMetaAdjustor::getBackEncLayer() const

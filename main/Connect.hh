@@ -48,13 +48,14 @@ class Connect {
 
     // returns error message if a query caused error
     std::string getError();
+    void close(){ close_on_destroy = true; }
+
 
     my_ulonglong last_insert_id();
     unsigned long real_escape_string(char *const to,
                                      const char *const from,
                                      unsigned long length);
     unsigned int get_mysql_errno();
-
     ~Connect();
 
  private:

@@ -47,11 +47,35 @@ template <typename ContainerType>
 void rewriteInsertHelper(const Item &i, const FieldMeta &fm, Analysis &a,
                          ContainerType *const append_list)
 {
-    std::vector<Item *> l;
-    itemTypes.do_rewrite_insert(i, fm, a, &l);
-    for (auto it : l) {
-        append_list->push_back(it);
-    }
+	const std::string enc = "enc_";
+	std::string identifier = fm.fname.substr(0, 4);
+
+	if (identifier.compare(enc) == 0) {
+		std::cout << "IN rewriteInsertHelper！！！" << std::endl;
+		    std::vector<Item *> l;
+		    itemTypes.do_rewrite_insert(i, fm, a, &l);
+		    for (auto it : l) {
+		    	std::cout << "Item->str_value: " << it->str_value << std::endl;
+		    	std::cout << "Item->str_value size: " << it->str_value.length() << std::endl;
+				std::cout << "Item->str_value type: " << it->type() << std::endl; // 对VARBINARY编码
+				int item_type = it->type();
+		    	if(item_type == 3){
+		    		char* decode = it->EncodeVarbinary();
+		    		std::cout << "Item->str_value decode: " <<  decode << std::endl; // 对VARBINARY编码
+		    		std::cout << "Item->str_value decode size: " << strlen(decode) << std::endl; // 对VARBINARY编码
+		    	}
+		    	std::cout << "Item->str_value encode: " << it->str_value << std::endl;
+		    	std::cout << "Item->str_value encode size: " << it->str_value.length() << std::endl;
+		        append_list->push_back(it);
+		    }
+	} else {
+		/*
+		 * For debug**
+		 */
+		std::cout << "Row value is:" << i.name << std::endl;
+		Item* tmp = const_cast<Item*>(&i);
+		append_list->push_back(tmp);
+	}
 }
 
 class InsertHandler : public DMLHandler {
@@ -267,6 +291,7 @@ class DeleteHandler : public DMLHandler {
     virtual LEX *rewrite(Analysis &a, LEX *lex, const ProxyState &ps)
         const
     {
+    	std::cout << "Im rewrite of \"deletehandler\"!!!! " << std::endl;
         LEX *const new_lex = copyWithTHD(lex);
         new_lex->query_tables = rewrite_table_list(lex->query_tables, a);
         set_select_lex(new_lex,
@@ -299,6 +324,7 @@ class SelectHandler : public DMLHandler {
  LEX *DMLHandler::transformLex(Analysis &analysis, LEX *lex,
                                const ProxyState &ps) const
 {
+	 //gather function is used for writing RewritePlan for encrypting.
     this->gather(analysis, lex, ps);
 
     return this->rewrite(analysis, lex, ps);
@@ -346,7 +372,6 @@ process_select_lex(const st_select_lex &select_lex, Analysis &a)
         const Item *const item = item_it++;
         if (!item)
             break;
-
         gatherAndAddAnalysisRewritePlan(*item, a);
     }
 
@@ -387,7 +412,7 @@ gatherAndAddAnalysisRewritePlanForFieldValuePair(const Item_field &field,
                                                  const Item &val,
                                                  Analysis &a)
 {
-    a.rewritePlans[&val] = std::unique_ptr<RewritePlan>(gather(val, a));
+	a.rewritePlans[&val] = std::unique_ptr<RewritePlan>(gather(val, a));
     a.rewritePlans[&field] =
         std::unique_ptr<RewritePlan>(gather(field, a));
 
@@ -401,6 +426,7 @@ static SQL_I_List<ORDER> *
 rewrite_order(Analysis &a, const SQL_I_List<ORDER> &lst,
               const EncSet &constr, const std::string &name)
 {
+	std::cout << "rewriting order..." << std::endl;
     SQL_I_List<ORDER> *const new_lst = copyWithTHD(&lst);
     ORDER * prev = NULL;
     for (ORDER *o = lst.first; o; o = o->next) {
@@ -431,7 +457,7 @@ static st_select_lex *
 rewrite_filters_lex(const st_select_lex &select_lex, Analysis & a)
 {
     st_select_lex *const new_select_lex = copyWithTHD(&select_lex);
-
+    std::cout << "Im filter !!!!! from delete" << std::endl;
     // FIXME: Use const reference for list.
     new_select_lex->group_list =
         *rewrite_order(a, select_lex.group_list, EQ_EncSet, "group by");
@@ -439,6 +465,8 @@ rewrite_filters_lex(const st_select_lex &select_lex, Analysis & a)
         *rewrite_order(a, select_lex.order_list, ORD_EncSet, "order by");
 
     if (select_lex.where) {
+    	std::cout << "Processing where clause." << std::endl;
+    	//Entrance.
         set_where(new_select_lex, rewrite(*select_lex.where,
                                           PLAIN_EncSet, a));
     }
@@ -576,6 +604,7 @@ rewrite_select_lex(const st_select_lex &select_lex, Analysis &a)
     // rewrite_filters_lex must be called before rewrite_proj because
     // it is responsible for filling Analysis::item_cache which
     // rewrite_proj uses.
+	std::cout << "I am invoked by deletehandler!!!" << std::endl;
     st_select_lex *const new_select_lex =
         rewrite_filters_lex(select_lex, a);
 
@@ -723,13 +752,33 @@ doPairRewrite(FieldMeta &fm, const EncSet &es,
     for (auto pair : es.osl) {
         const OLK olk = {pair.first, pair.second.first, &fm};
 
+
         Item *const re_field =
             itemTypes.do_rewrite(field_item, olk, *field_rp, a);
         res_fields->push_back(re_field);
 
-        Item *const re_value =
-            itemTypes.do_rewrite(value_item, olk, *value_rp, a);
-        res_values->push_back(re_value);
+        std::string identifier = fm.fname.substr(0, 5);
+        const std::string nenc = "nenc_";
+        if (identifier.compare(nenc) == 0) {
+        	Item* const re_value= const_cast<Item*>(&value_item);
+        	res_values->push_back(re_value);
+        } else {
+        	Item *const re_value =
+        	            itemTypes.do_rewrite(value_item, olk, *value_rp, a);
+
+        	        // 对update中的更新数据进行编码
+        	        std::cout << "re_value->str_value: " << re_value->str_value << std::endl;
+        			int item_type = re_value->type();
+        	    	if(item_type == 3){
+        	    		char* decode = re_value->EncodeVarbinary();
+        	    		std::cout << "re_value->str_value decode: " <<  decode << std::endl; // 对VARBINARY编码
+        	    		std::cout << "re_value->str_value decode size: " << strlen(decode) << std::endl; // 对VARBINARY编码
+        	    	}
+        			std::cout << "re_value->str_value encode: " << re_value->str_value << std::endl;
+        			std::cout << "re_value->str_value encode size: " << re_value->str_value.length() << std::endl;
+
+        	        res_values->push_back(re_value);
+        }
     }
 }
 

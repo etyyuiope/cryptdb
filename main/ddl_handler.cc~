@@ -50,7 +50,6 @@ class CreateTableHandler : public DDLHandler {
 
             auto it =
                 List_iterator<Create_field>(lex->alter_info.create_list);
-
             new_lex->alter_info.create_list =
                 accumList<Create_field>(it,
                     [&a, &ps, &tm] (List<Create_field> out_list,

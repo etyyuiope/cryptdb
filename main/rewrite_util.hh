@@ -48,7 +48,7 @@ commit_transaction_lex(const std::string &dbname);
 
 std::vector<Create_field *>
 rewrite_create_field(const FieldMeta * const fm, Create_field * const f,
-                     const Analysis &a);
+                     const Analysis &a, bool needEnc);
 
 std::vector<Key *>
 rewrite_key(const TableMeta &tm, Key * const key, const Analysis &a);
@@ -157,6 +157,11 @@ public:
 
 EpilogueResult
 queryEpilogue(const ProxyState &ps, const QueryRewrite &qr,
+              const ResType &res, const std::string &query,
+              const std::string &default_db, bool pp);
+
+ResType
+resultEpilogue(const ProxyState &ps, const QueryRewrite &qr,
               const ResType &res, const std::string &query,
               const std::string &default_db, bool pp);
 
