@@ -141,3 +141,7 @@ Convention : When this document uses syntax like
 
 Notice:
 	If you want to selectively encrypt data, please refer to the new pdf.
+	
+## Bug detected:
+1. Yet it cannot decrypt any of the `varchar` type of MySQL.
+2. Terminal-based select using plaintext works well but cannot function in Eclipse.
